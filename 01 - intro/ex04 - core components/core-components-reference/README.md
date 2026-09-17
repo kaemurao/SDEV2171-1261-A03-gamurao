@@ -17,7 +17,7 @@ From this folder:
 5. Open the app on one working path:
    - Android emulator with the installed development build
    - iOS simulator on macOS with the installed development build
-   - a prepared device path with the installed development build if already available
+   - a prepared device path[README.md](README.md) with the installed development build if already available
 
 ## What this screen demonstrates
 - `View` for structure and grouped sections
