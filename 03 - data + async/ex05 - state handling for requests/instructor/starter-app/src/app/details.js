@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View 
+} from 'react-native';
 import { API_BASE_URL } from '../lib/apiBaseUrl';
 
 // Test controls sent to the backend. Change, save, then reopen this screen.
@@ -8,33 +16,64 @@ import { API_BASE_URL } from '../lib/apiBaseUrl';
 //   'delay=1500&error=1'  server error
 //   'race=1'              shorter searches answer slower
 //   'flaky=2'             fails twice for the same URL, then succeeds
-const TEST_PARAMS = 'delay=1500';
+const TEST_PARAMS = 'race=1';
 
 export default function DetailsScreen() {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [steps, setSteps] = useState([]);
 
+  // I'm going to use state not just to hold data, but to observe & handle the state of my request.
+  // I'm starting by manually changing this state UI-side to make sure all my UI branches work right, *then* I'll let the request/response cycle drive it.
+  const [status, setStatus]             = useState('loading')  //  'loading' | 'success' | 'error'
+  const [errorMessage, setErrorMessage] = useState('');
+  
+  const [reloadKey, setReloadKey] = useState(0); // I'm going to use this to 'key' each specific request/retry (full payoff in next commit)
+
+
   useEffect(() => {
+
+    const controller = new AbortController();
+
     async function loadSteps() {
+      setStatus('loading');
+
+      // I can connect this to a request when it fires, and 'detonate' it to cancel that request
+      // (e.g. if I want to re-fire it)
+
       try {
         // encodeURIComponent makes the user's search text safe to put in a URL.
         // TEST_PARAMS is added as-is, since you write it yourself.
         const url = `${API_BASE_URL}/study-steps?q=${encodeURIComponent(query)}&${TEST_PARAMS}`;
-        const response = await fetch(url);
+        const response = await fetch(
+          url,
+          {signal: controller.signal} // this is the 'umbilical connection' between the request and the AbortController
+        );
+        console.log(response);
 
         if (!response.ok) {
-          throw new Error(`Response status: ${response.status}`);
+          const body = await response.json().catch(() => ({})); // catch-all catch expression; I want to capture any error, not just JSON/HTTP errors 
+          throw new Error(body.error ?? `Server returned ${response.status}`)
+          // first, try to get an error message out of the response
+          // if there is none, return a prepapred string w/ just the HTTP status code
         }
 
         setSteps(await response.json());
+        setStatus('success'); // oops
       } catch (error) {
-        console.error('request failed', error);
+        // console.error('request failed', error);
+        if (controller.signal.abort) return; // if I've already canceled the request, don't show error state
+        setErrorMessage(error.message);
+        setStatus('error'); // oops
       }
     }
 
     loadSteps();
-  }, [query]);
+    // if a useEffect callback returns a nested callback, that nested callback runs as cleanup (on component dismount)
+    // just remember: re-rendering the component (e.g. if state updates) means dismounting and re-mounting it
+    // clearer sketch of the structure: https://react.dev/reference/react/useEffect#usage
+    return () => controller.abort(); // we're saying, any time this effect re-fires, kill the fetch that was happening the previous effect fire
+  }, [query, reloadKey]);  // I just need to increment the key to re-fire the request cycle
 
   function renderStep({ item }) {
     return <Text style={styles.stepLabel}>{item.label}</Text>;
@@ -52,11 +91,33 @@ export default function DetailsScreen() {
         style={styles.input}
       />
 
-      {steps.length === 0 ? (
+      {status === 'loading' && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>No study steps yet.</Text>
+          <ActivityIndicator size="large" color="#8c5d35" />
+          <Text style={styles.cardTitle}>Loading study steps...</Text>
         </View>
-      ) : (
+      )}
+
+      {status === 'error' && (
+        <View style={[styles.card, styles.errorCard]}>
+          <Text style={styles.cardTitle}>Error loading study steps.</Text>
+          <Text style={styles.cardBody}>{errorMessage}</Text>
+          <Pressable
+            style={styles.button}
+            onPress={() => setReloadKey((key) => key + 1)}
+          >
+            <Text style={styles.buttonLabel}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {status === 'success' && steps.length === 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>No study steps found for: "{query}".</Text>
+        </View>
+      )}
+
+      {status === 'success' && steps.length > 0 && (
         <FlatList
           data={steps}
           keyExtractor={(item) => item.id}
