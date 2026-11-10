@@ -4,6 +4,12 @@ const StudyPlanContext = createContext(null);
 
 export function StudyPlanProvider({ children }) {
   const [selectedSteps, setSelectedSteps] = useState([]);
+  const [savedSession, setSavedSession] = useState(null);
+
+  function saveSession({ title, goal }) {
+    // keep the plan as-is when last saved
+    setSavedSession({title, goal, steps: selectedSteps});
+  } 
 
   function toggleStep(step) {
     setSelectedSteps((currentSteps) => {
@@ -21,7 +27,7 @@ export function StudyPlanProvider({ children }) {
     setSelectedSteps((currentSteps) => currentSteps.filter((step) => step.id !== id));
   }
 
-  const value = { selectedSteps, toggleStep, removeStep };
+  const value = { selectedSteps, savedSession, toggleStep, removeStep, saveSession };
 
   return <StudyPlanContext value={value}>{children}</StudyPlanContext>;
 }
